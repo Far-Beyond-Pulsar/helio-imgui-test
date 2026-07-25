@@ -2,10 +2,7 @@
 set shell := ["cmd.exe", "/C"]
 
 # ── PATH — ensure common tool locations are available ────────────────────────────
-export PATH := env_var_or_default("PATH", "") +
-    ";C:\\Program Files\\CMake\\bin" +
-    ";C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin" +
-    ";C:\\Users\\redst\\.cargo\\bin"
+export PATH := env_var_or_default("PATH", "") + ";C:\\Program Files\\CMake\\bin;C:\\Users\\redst\\.cargo\\bin"
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
 repo_root     := "."
