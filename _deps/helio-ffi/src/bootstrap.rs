@@ -213,6 +213,20 @@ pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void,
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn bootstrap_poll(wait: bool) {
+    if let Some(ref state) = STATE {
+        if wait {
+            let _ = state.device.poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            });
+        } else {
+            let _ = state.device.poll(wgpu::PollType::Poll);
+        }
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn bootstrap_shutdown() {
     STATE = None;
 }
