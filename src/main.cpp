@@ -58,14 +58,14 @@ int main() {
     HelioRendererPtr ren = helio_renderer_new(dev,q,1,&cfg,scene,dc,cs);
     HelioScenePtr rs = helio_renderer_scene(ren);
 
-    int fc=0; double lt=glfwGetTime();
+    int fc=0; double last_t=glfwGetTime();
     while (!glfwWindowShouldClose(w)) {
         glfwPollEvents();
         float a = (float)glfwGetTime() * 0.3f;
         cam = helio_camera_perspective_look_at(5*sinf(a),3,5*cosf(a),0,0,0,1.0472f,1280/720.f,0.1f,100.f);
         helio_scene_update_camera(rs, &cam);
         bootstrap_render_frame(ren, &cam);
-        if (++fc, (glfwGetTime()-lt)>=1.0) { printf("[helio] FPS: %d\n",fc); fc=0; lt=glfwGetTime(); }
+        if (++fc, (glfwGetTime()-last_t)>=1.0) { printf("[helio] FPS: %d\n",fc); fc=0; last_t=glfwGetTime(); }
     }
     helio_renderer_destroy(ren);
     bootstrap_shutdown();
