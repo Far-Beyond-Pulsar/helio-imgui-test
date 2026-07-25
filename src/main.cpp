@@ -54,7 +54,7 @@ int main() {
     lt.position_range[0]=0; lt.position_range[1]=5; lt.position_range[2]=0; lt.position_range[3]=20; lt.light_type=2;
     helio_scene_insert_light(scene, &lt);
 
-    HelioRendererConfig cfg{}; cfg.width=1280; cfg.height=720; cfg.render_scale=1;
+    HelioRendererConfig cfg{}; cfg.width=1280; cfg.height=720; cfg.render_scale=1; cfg.shadow_face_capacity=32;
     HelioRendererPtr ren = helio_renderer_new(dev,q,1,&cfg,scene,dc,cs);
     HelioScenePtr rs = helio_renderer_scene(ren);
 
