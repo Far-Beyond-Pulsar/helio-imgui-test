@@ -7,6 +7,7 @@ use raw_window_handle::{
     WindowHandle, DisplayHandle,
     RawWindowHandle,
 };
+use helio::{required_wgpu_features, required_experimental_features};
 
 // ── Win32 window wrapper ───────────────────────────────────────────────────────
 
@@ -90,8 +91,9 @@ pub unsafe extern "C" fn bootstrap_init(
     let (device, queue) = match pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
             label: Some("Helio Device"),
-            required_features: wgpu::Features::empty(),
+            required_features: required_wgpu_features(adapter.features()),
             required_limits: wgpu::Limits::downlevel_defaults(),
+            experimental_features: required_experimental_features(adapter.features()),
             ..Default::default()
         },
     )) {
