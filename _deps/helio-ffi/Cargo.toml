@@ -17,7 +17,6 @@ helio-default-graphs = { git = "https://github.com/Far-Beyond-Pulsar/Helio.git",
 glam = { version = "0.33", features = ["bytemuck"] }
 bytemuck = { version = "1", features = ["derive"] }
 wgpu = { version = "30.0", default-features = true, features = ["vulkan", "metal", "dx12", "gles", "webgpu", "wgsl"] }
-wgpu-core = { version = "30.0", features = ["capi"] }
 pollster = "0.4"
 raw-window-handle = "0.6.2"
 log = "0.4"

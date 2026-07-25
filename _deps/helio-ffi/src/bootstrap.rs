@@ -211,6 +211,115 @@ pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void,
     true
 }
 
+/// Render the helio scene to a CPU-side RGBA buffer for display in ImGui.
+/// `out_rgba` must be `width * height * 4` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_render_viewport(
+    renderer: *mut std::ffi::c_void,
+    camera: *const std::ffi::c_void,
+    width: u32,
+    height: u32,
+    out_rgba: *mut u8,
+) -> bool {
+    let state = match STATE.as_ref() {
+        Some(s) => s,
+        None => return false,
+    };
+
+    // Create temporary texture for offscreen rendering
+    let tex = state.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Viewport RT"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+    // Render helio scene into it
+    let r = &mut *(renderer as *mut helio::Renderer);
+    let c = &*(camera as *const crate::types::HelioCameraDesc);
+    if let Err(_) = r.render(&crate::camera::camera_from_desc(c), &view) {
+        return false;
+    }
+
+    // Copy to staging buffer
+    let bytes_per_row = width * 4;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let padded = ((bytes_per_row + align - 1) / align) * align;
+    let buf_size = padded as u64 * height as u64;
+
+    let staging = state.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Viewport Staging"),
+        size: buf_size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = state.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Viewport Readback"),
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded),
+                rows_per_image: Some(height),
+            },
+        },
+        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+    );
+    state.queue.submit(std::iter::once(encoder.finish()));
+
+    // Map and copy to output
+    let (tx, rx) = std::sync::mpsc::channel();
+    let slice = staging.slice(..);
+    slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+    state.device.poll(wgpu::PollType::Poll);
+    let mapped_ok = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+        Ok(Ok(())) => true,
+        _ => false,
+    };
+    if !mapped_ok { return false; }
+    match slice.get_mapped_range() {
+        Ok(mapped) => {
+            let src = &mapped[..buf_size as usize];
+            let dst = std::slice::from_raw_parts_mut(out_rgba, (bytes_per_row * height) as usize);
+            for y in 0..height as usize {
+                let padded_row = &src[y * padded as usize..(y+1) * padded as usize];
+                let dst_row = &mut dst[y * bytes_per_row as usize..(y+1) * bytes_per_row as usize];
+                dst_row.copy_from_slice(&padded_row[..bytes_per_row as usize]);
+            }
+            drop(mapped);
+            staging.unmap();
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_get_format() -> u32 {
+    match STATE.as_ref() {
+        Some(s) => {
+            if s.format == wgpu::TextureFormat::Rgba8UnormSrgb { 1 }
+            else if s.format == wgpu::TextureFormat::Bgra8UnormSrgb { 4 }
+            else { 0 }
+        }
+        None => 0,
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_poll(wait: bool) {
     if let Some(ref state) = STATE {

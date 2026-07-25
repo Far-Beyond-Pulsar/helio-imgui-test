@@ -1,5 +1,4 @@
 #pragma once
-
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -7,34 +6,17 @@
 extern "C" {
 #endif
 
-/// Initialise wgpu and return pointers to device, queue, and auxiliary buffers.
-/// Call once before any helio-ffi functions.
-bool bootstrap_init(
-    uint32_t width, uint32_t height,
-    void** out_device,
-    void** out_queue,
-    void** out_debug_cam,
-    void** out_cull_stats
-);
-
-/// Create a wgpu surface from a Win32 HWND.  Call after bootstrap_init().
+bool bootstrap_init(uint32_t width, uint32_t height, void** out_device, void** out_queue, void** out_debug_cam, void** out_cull_stats);
 bool bootstrap_create_surface(void* hinstance, void* hwnd);
-
-/// Get the current swapchain texture view.  Returns a pointer suitable
-/// for passing as HelioTextureViewPtr to helio_renderer_render().
+uint32_t bootstrap_get_format(void);
 void* bootstrap_current_texture_view(void);
-
-/// Present the current frame to the surface.
 void bootstrap_present(void);
-
-/// Poll wgpu device (process async callbacks).
 void bootstrap_poll(bool wait);
-
-/// Acquire swapchain image, render scene to it, and present.
-/// Returns false if the surface was lost and the app should stop.
 bool bootstrap_render_frame(void* renderer, const void* camera);
 
-/// Destroy all resources.  Call at exit.
+// Viewport: render helio scene to CPU buffer for ImGui display
+bool bootstrap_render_viewport(void* renderer, const void* camera, uint32_t width, uint32_t height, uint8_t* out_rgba);
+
 void bootstrap_shutdown(void);
 
 #ifdef __cplusplus

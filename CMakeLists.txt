@@ -18,7 +18,7 @@ set(GLFW_BUILD_DOCS OFF)
 set(GLFW_INSTALL OFF)
 FetchContent_MakeAvailable(glfw)
 
-# Dear ImGui
+# Dear ImGui (docking branch)
 FetchContent_Declare(imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG docking
@@ -40,5 +40,19 @@ if(NOT imgui_POPULATED)
     target_link_libraries(imgui PRIVATE glfw)
 endif()
 
+# Helio FFI (Rust)
+if(DEFINED HELIO_FFI_LIB)
+    add_library(helio_ffi STATIC IMPORTED GLOBAL)
+    set_target_properties(helio_ffi PROPERTIES IMPORTED_LOCATION "${HELIO_FFI_LIB}")
+endif()
+
 add_executable(helio_imgui_test src/main.cpp)
+target_include_directories(helio_imgui_test PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_include_directories(helio_imgui_test PRIVATE "${CMAKE_SOURCE_DIR}/_deps/Helio-cpp/include")
 target_link_libraries(helio_imgui_test PRIVATE glfw imgui opengl32)
+if(TARGET helio_ffi)
+    target_link_libraries(helio_imgui_test PRIVATE helio_ffi)
+endif()
+if(WIN32)
+    target_link_libraries(helio_imgui_test PRIVATE ws2_32 userenv ntdll bcrypt advapi32 shlwapi)
+endif()
