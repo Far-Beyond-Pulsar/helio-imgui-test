@@ -186,16 +186,9 @@ pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void,
         None => return false,
     };
 
-    // Acquire with retry
-    let surface_tex = loop {
-        match surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => break t,
-            wgpu::CurrentSurfaceTexture::Timeout => {
-                state.device.poll(wgpu::PollType::Poll);
-                continue;
-            }
-            _ => return false,
-        }
+    let surface_tex = match surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+        _ => return false,
     };
     let view = surface_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -206,7 +199,7 @@ pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void,
         let _ = r.render(&crate::camera::camera_from_desc(c), &view);
     }
 
-    // Present (drop SurfaceTexture)
+    drop(view);
     drop(surface_tex);
     true
 }
