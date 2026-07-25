@@ -233,47 +233,56 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
     // Retry loop: if acquire times out, poll the device to advance GPU
     // work and free swapchain images, then try again. On Outdated,
     // reconfigure the surface and retry.
-    let tex = match surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(t)
-        | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-        wgpu::CurrentSurfaceTexture::Outdated => {
-            let caps = surface.get_capabilities(&state.adapter);
-            let fmt = caps.formats.iter().copied()
-                .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
-                .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
-                .unwrap_or(caps.formats[0]);
-            surface.configure(&state.device, &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: fmt,
-                width: state.width,
-                height: state.height,
-                present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![],
-                desired_maximum_frame_latency: 2,
-                color_space: wgpu::SurfaceColorSpace::Auto,
-            });
-            state.format = fmt;
-            match surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(t)
-                | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-                _ => return ptr::null_mut(),
+    // Retry once on Timeout in case the poll in present() didn't complete
+    for _ in 0..2 {
+        match surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => return {
+                let view = Box::new(t.texture.create_view(&wgpu::TextureViewDescriptor::default()));
+                let ptr = &*view as *const wgpu::TextureView as *mut std::ffi::c_void;
+                CURRENT_FRAME = Some(CurrentFrame { surface_tex: t, view });
+                ptr
+            },
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                state.device.poll(wgpu::PollType::Poll);
+                continue;
             }
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                let caps = surface.get_capabilities(&state.adapter);
+                let fmt = caps.formats.iter().copied()
+                    .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
+                    .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
+                    .unwrap_or(caps.formats[0]);
+                surface.configure(&state.device, &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: fmt,
+                    width: state.width,
+                    height: state.height,
+                    present_mode: wgpu::PresentMode::Fifo,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![],
+                    desired_maximum_frame_latency: 2,
+                    color_space: wgpu::SurfaceColorSpace::Auto,
+                });
+                state.format = fmt;
+                continue;
+            }
+            _ => break,
         }
-        _ => return ptr::null_mut(),
-    };
-
-    let view = Box::new(tex.texture.create_view(&wgpu::TextureViewDescriptor::default()));
-    let view_ptr = &*view as *const wgpu::TextureView as *mut std::ffi::c_void;
-
-    CURRENT_FRAME = Some(CurrentFrame { surface_tex: tex, view });
-
-    view_ptr
+    }
+    ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_present() {
     CURRENT_FRAME = None;
+    // Drain GPU so swapchain images are returned before next acquire
+    if let Some(ref state) = STATE {
+        let _ = state.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_millis(16)),
+        });
+    }
 }
 
 #[no_mangle]
