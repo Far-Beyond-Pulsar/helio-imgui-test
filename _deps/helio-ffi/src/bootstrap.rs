@@ -232,15 +232,20 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
 
     // Retry loop: if acquire times out, poll the device to advance GPU
     // work and free swapchain images, then try again.
+    // Retry acquire on Timeout: sleep + poll to let the GPU catch up.
+    // Max ~100ms of retries before giving up.
+     let mut retries = 0u32;
     let tex = loop {
         match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => break t,
             wgpu::CurrentSurfaceTexture::Timeout => {
-                state.device.poll(wgpu::PollType::Wait {
-                    submission_index: None,
-                    timeout: Some(std::time::Duration::from_millis(10)),
-                });
+                retries += 1;
+                if retries > 100 {
+                    return ptr::null_mut();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                state.device.poll(wgpu::PollType::Poll);
                 continue;
             }
             _ => return ptr::null_mut(), // Outdated, Lost, Occluded, Validation
