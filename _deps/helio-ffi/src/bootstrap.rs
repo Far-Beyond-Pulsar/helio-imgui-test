@@ -38,6 +38,7 @@ unsafe impl Sync for Win32Window {}
 // ── Internal state ─────────────────────────────────────────────────────────────
 
 struct BootstrapState {
+    instance: wgpu::Instance,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     adapter: wgpu::Adapter,
@@ -121,6 +122,7 @@ pub unsafe extern "C" fn bootstrap_init(
     ptr::write(out_cull_stats, Box::into_raw(cull_stats_buf) as *mut _);
 
     STATE = Some(BootstrapState {
+        instance,
         device,
         queue,
         adapter,
@@ -147,13 +149,7 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
         hinstance: hinstance as isize,
     };
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::all(),
-        flags: wgpu::InstanceFlags::empty(),
-        ..wgpu::InstanceDescriptor::new_without_display_handle()
-    });
-
-    let surface = match instance.create_surface(raw_win) {
+    let surface = match state.instance.create_surface(raw_win) {
         Ok(s) => s,
         Err(e) => {
             log::error!("bootstrap_create_surface: {:?}", e);

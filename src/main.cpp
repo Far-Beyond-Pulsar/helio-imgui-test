@@ -14,6 +14,11 @@
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <windows.h>
+#undef near
+#undef far
 
 #include "bootstrap.h"
 #include <helio/helio_capi.h>

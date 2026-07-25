@@ -79,7 +79,10 @@ endif()
 
 # Windows system libs
 if(WIN32)
-    target_link_libraries(helio_imgui_test PRIVATE user32 gdi32 shell32 ole32)
+    target_link_libraries(helio_imgui_test PRIVATE
+        user32 gdi32 shell32 ole32
+        ws2_32 userenv ntdll bcrypt advapi32 shlwapi
+    )
     # If duplicate wgpu symbols from linking separate Rust staticlibs,
     # uncomment the next line:
     # target_link_options(helio_imgui_test PRIVATE /FORCE:MULTIPLE)
