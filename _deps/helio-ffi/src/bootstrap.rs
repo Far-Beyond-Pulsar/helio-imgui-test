@@ -207,10 +207,10 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
         format: fmt,
         width: state.width,
         height: state.height,
-        present_mode: wgpu::PresentMode::AutoNoVsync,
+        present_mode: wgpu::PresentMode::Immediate,
         alpha_mode: wgpu::CompositeAlphaMode::Auto,
         view_formats: vec![],
-        desired_maximum_frame_latency: 2,
+        desired_maximum_frame_latency: 5,
         color_space: wgpu::SurfaceColorSpace::Auto,
     });
 
