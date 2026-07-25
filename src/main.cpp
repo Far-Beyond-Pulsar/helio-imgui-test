@@ -1,5 +1,5 @@
-/// Game Engine-style ImGui test app
 #include <cstdio>
+#include <cstdlib>
 #include <GLFW/glfw3.h>
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
@@ -25,13 +25,24 @@ int main() {
     ImGui_ImplOpenGL3_Init("#version 330");
 
     bool show_demo = true;
+    bool p_open = true;
     while (!glfwWindowShouldClose(w)) {
         glfwPollEvents();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        ImGui::DockSpaceOverViewport();
 
+        // Dockspace
+        ImGuiWindowFlags flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+        ImGui::SetNextWindowPos(ImVec2(0,0));
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+        ImGui::Begin("MainDockspace", &p_open, flags);
+        ImGui::PopStyleVar();
+        ImGui::DockSpace(ImGui::GetID("DockSpace"));
+        ImGui::End();
+
+        // Menu bar (outside dockspace so it's always visible)
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("File")) { ImGui::MenuItem("New"); ImGui::MenuItem("Open"); ImGui::MenuItem("Save"); ImGui::EndMenu(); }
             if (ImGui::BeginMenu("Edit")) { ImGui::MenuItem("Undo"); ImGui::MenuItem("Redo"); ImGui::EndMenu(); }
@@ -56,7 +67,7 @@ int main() {
         ImGui::Separator();
         ImGui::Text("Mesh: Cube (12 triangles)");
         ImGui::Separator();
-        float color[4] = {0.8f, 0.2f, 0.2f, 1.0f};
+        float color[4] = {0.8f,0.2f,0.2f,1.0f};
         ImGui::ColorEdit4("Color", color);
         ImGui::End();
 
@@ -64,7 +75,9 @@ int main() {
         ImVec2 vp = ImGui::GetContentRegionAvail();
         ImGui::Image((ImTextureID)(intptr_t)0, vp, ImVec2(0,1), ImVec2(1,0));
         auto dl = ImGui::GetWindowDrawList();
-        ImVec2 c = ImGui::GetWindowPos() + ImGui::GetWindowSize() * 0.5f;
+        ImVec2 c = ImGui::GetWindowPos();
+        c.x += ImGui::GetWindowWidth() / 2;
+        c.y += ImGui::GetWindowHeight() / 2;
         dl->AddLine(ImVec2(c.x-20,c.y), ImVec2(c.x+20,c.y), IM_COL32(255,255,255,80));
         dl->AddLine(ImVec2(c.x,c.y-20), ImVec2(c.x,c.y+20), IM_COL32(255,255,255,80));
         ImGui::End();
