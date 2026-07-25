@@ -1,7 +1,6 @@
 set shell := ["cmd.exe", "/C"]
 
-export PATH := env_var_or_default("PATH", "") +
-    ";C:\\Program Files\\CMake\\bin;C:\\Users\\redst\\.cargo\\bin"
+export PATH := env_var_or_default("PATH", "") + ";C:\\Program Files\\CMake\\bin;C:\\Users\\redst\\.cargo\\bin"
 
 build_dir := "."
 cmake := env_var_or_default("CMAKE", "cmake")
