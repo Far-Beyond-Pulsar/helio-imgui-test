@@ -10,9 +10,9 @@ crate-type = ["staticlib", "cdylib"]
 name = "helio_ffi"
 
 [dependencies]
-helio = { path = "../Helio/crates/helio" }
-helio-core = { path = "../Helio/crates/helio-core" }
-libhelio = { path = "../Helio/crates/libhelio" }
+helio = { git = "https://github.com/Far-Beyond-Pulsar/Helio.git" }
+helio-core = { git = "https://github.com/Far-Beyond-Pulsar/Helio.git" }
+libhelio = { git = "https://github.com/Far-Beyond-Pulsar/Helio.git" }
 glam = { version = "0.33", features = ["bytemuck"] }
 bytemuck = { version = "1", features = ["derive"] }
 wgpu = { version = "30.0", default-features = true, features = ["vulkan", "metal", "dx12", "gles", "webgpu", "wgsl"] }
