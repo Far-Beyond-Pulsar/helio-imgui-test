@@ -165,7 +165,7 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
         present_mode: wgpu::PresentMode::Fifo,
         alpha_mode: wgpu::CompositeAlphaMode::Auto,
         view_formats: vec![],
-        desired_maximum_frame_latency: 2,
+        desired_maximum_frame_latency: 60,
         color_space: wgpu::SurfaceColorSpace::Auto,
     });
     state.format = fmt;
@@ -199,12 +199,11 @@ pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void,
     };
     let view = surface_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // Render
-    let renderer = &mut *(renderer as *mut helio::Renderer);
-    let camera = &*(camera as *const crate::types::HelioCameraDesc);
-    if let Err(e) = renderer.render(&crate::camera::camera_from_desc(camera), &view) {
-        let _ = e;
-        return false;
+    // Render if a renderer was provided (null = clear-only frame)
+    if !renderer.is_null() && !camera.is_null() {
+        let r = &mut *(renderer as *mut helio::Renderer);
+        let c = &*(camera as *const crate::types::HelioCameraDesc);
+        let _ = r.render(&crate::camera::camera_from_desc(c), &view);
     }
 
     // Present (drop SurfaceTexture)
