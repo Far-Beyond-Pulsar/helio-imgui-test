@@ -20,26 +20,25 @@ pub unsafe extern "C" fn helio_camera_from_matrices(
     }
 }
 
-/// Create a perspective look-at camera.
+/// Create a perspective look-at camera (no up — defaults to (0,1,0)).
 #[no_mangle]
 pub unsafe extern "C" fn helio_camera_perspective_look_at(
-    position: HelioVec3,
-    target: HelioVec3,
-    up: HelioVec3,
+    px: f32, py: f32, pz: f32,
+    tx: f32, ty: f32, tz: f32,
     fov_y_radians: f32,
     aspect: f32,
     near: f32,
     far: f32,
 ) -> HelioCameraDesc {
-    let glam_pos: glam::Vec3 = position.into();
-    let glam_target: glam::Vec3 = target.into();
-    let glam_up: glam::Vec3 = up.into();
+    let glam_pos = glam::Vec3::new(px, py, pz);
+    let glam_target = glam::Vec3::new(tx, ty, tz);
+    let glam_up = glam::Vec3::Y;
     let view = glam::Mat4::look_at_rh(glam_pos, glam_target, glam_up);
     let proj = glam::Mat4::perspective_rh(fov_y_radians, aspect, near, far);
     HelioCameraDesc {
         view: view.into(),
         proj: proj.into(),
-        position,
+        position: HelioVec3 { x: px, y: py, z: pz },
         near,
         far,
         jitter: [0.0, 0.0],
