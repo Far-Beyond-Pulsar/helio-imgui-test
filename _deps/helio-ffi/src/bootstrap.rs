@@ -78,54 +78,35 @@ pub unsafe extern "C" fn bootstrap_init(
         ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
-    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        compatible_surface: None,
-        force_fallback_adapter: false,
-        ..Default::default()
-    })) {
-        Ok(a) => {
-            let info = a.get_info();
-            if info.device_type != wgpu::DeviceType::DiscreteGpu
-                && info.device_type != wgpu::DeviceType::IntegratedGpu
-            {
-                log::warn!(
-                    "bootstrap_init: got non-GPU adapter '{}' ({:?}), searching for a real GPU",
-                    info.name,
-                    info.device_type
-                );
-                drop(a);
-                let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
-                let mut best = None;
-                for adapter in adapters {
-                    let info = adapter.get_info();
-                    if info.device_type == wgpu::DeviceType::DiscreteGpu
-                        || info.device_type == wgpu::DeviceType::IntegratedGpu
-                    {
+    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
+    let adapter = {
+        // Prefer discrete GPU, fall back to integrated, reject everything else
+        let mut best: Option<wgpu::Adapter> = None;
+        for adapter in adapters {
+            let info = adapter.get_info();
+            match info.device_type {
+                wgpu::DeviceType::DiscreteGpu => {
+                    best = Some(adapter);
+                    log::info!("bootstrap_init: using DiscreteGpu '{}'", info.name);
+                    break;
+                }
+                wgpu::DeviceType::IntegratedGpu => {
+                    if best.is_none() {
                         best = Some(adapter);
-                        log::info!(
-                            "bootstrap_init: using adapter '{}' ({:?})",
-                            info.name,
-                            info.device_type
-                        );
-                        break;
+                        log::info!("bootstrap_init: using IntegratedGpu '{}'", info.name);
                     }
                 }
-                match best {
-                    Some(a) => a,
-                    None => {
-                        log::error!("bootstrap_init: no real GPU adapter found");
-                        return false;
-                    }
+                _ => {
+                    log::warn!("bootstrap_init: skipping '{}' ({:?})", info.name, info.device_type);
                 }
-            } else {
-                log::info!("bootstrap_init: using adapter '{}' ({:?})", info.name, info.device_type);
-                a
             }
         }
-        Err(e) => {
-            log::error!("bootstrap_init: request_adapter failed: {:?}", e);
-            return false;
+        match best {
+            Some(a) => a,
+            None => {
+                log::error!("bootstrap_init: no suitable GPU adapter found");
+                return false;
+            }
         }
     };
 
