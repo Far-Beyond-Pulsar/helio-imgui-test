@@ -4,10 +4,16 @@
 #include <cmath>
 #include <vector>
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <windows.h>
+#undef near
+#undef far
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "bootstrap.h"
+#include <helio/helio_capi.h>
 
 static void fail(const char* msg) { fprintf(stderr, "FATAL: %s\n", msg); exit(1); }
 
