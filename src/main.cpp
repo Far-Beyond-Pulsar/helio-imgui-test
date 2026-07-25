@@ -256,6 +256,7 @@ int main() {
         double t0 = glfwGetTime();
         void* target_view = bootstrap_current_texture_view();
         double t1 = glfwGetTime();
+        double ms_acq = (t1 - t0) * 1000.0;
         if (target_view) {
             HelioResult r = helio_renderer_render(renderer, &cam, target_view);
             double t2 = glfwGetTime();
@@ -265,12 +266,13 @@ int main() {
             }
             bootstrap_present();
             double t3 = glfwGetTime();
-            double ms_acq = (t1 - t0) * 1000.0;
             double ms_render = (t2 - t1) * 1000.0;
             double ms_present = (t3 - t2) * 1000.0;
-            if (ms_render > 5.0) {
-                printf("[timing] acq=%.1fms render=%.1fms present=%.1fms\n",
-                    ms_acq, ms_render, ms_present);
+            printf("[perf] acq=%.1fms render=%.1fms present=%.1fms\n",
+                ms_acq, ms_render, ms_present);
+        } else {
+            if (ms_acq > 1.0) {
+                printf("[perf] ACQUIRE FAILED after %.0fms\n", ms_acq);
             }
         }
 
