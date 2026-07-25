@@ -1,6 +1,12 @@
 # ── Shell (Windows) ──────────────────────────────────────────────────────────────
 set shell := ["cmd.exe", "/C"]
 
+# ── PATH — ensure common tool locations are available ────────────────────────────
+export PATH := env_var_or_default("PATH", "") +
+    ";C:\\Program Files\\CMake\\bin" +
+    ";C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin" +
+    ";C:\\Users\\redst\\.cargo\\bin"
+
 # ── Paths ───────────────────────────────────────────────────────────────────────
 repo_root     := "."
 build_dir     := repo_root / "build"
@@ -24,7 +30,7 @@ clone-helio-cpp:
 
 # Build helio-ffi (vendored in _deps/helio-ffi)
 build-ffi:
-    cd /d "{{helio_ffi_dir}}" && "{{cargo}}" build --release --target {{rust_target}}
+    cd /d "{{helio_ffi_dir}}" && {{cargo}} build --release --target {{rust_target}}
     @if not exist "{{build_dir}}\lib" mkdir "{{build_dir}}\lib"
     copy /Y "{{helio_ffi_dir}}\target\{{rust_target}}\release\helio_ffi.lib" "{{build_dir}}\lib\"
     copy /Y "{{helio_ffi_dir}}\target\{{rust_target}}\release\helio_ffi.dll" "{{build_dir}}\lib\"
@@ -33,11 +39,11 @@ build-ffi:
 # CMake configure
 configure: build-ffi clone-helio-cpp
     @if not exist "{{build_dir}}" mkdir "{{build_dir}}"
-    cd /d "{{build_dir}}" && "{{cmake}}" .. -DHELIO_FFI_LIB=".\lib\helio_ffi.lib" -DHELIO_CPP_INCLUDE="{{helio_cpp_dir}}\include"
+    cd /d "{{build_dir}}" && {{cmake}} .. -DHELIO_FFI_LIB=".\lib\helio_ffi.lib" -DHELIO_CPP_INCLUDE="{{helio_cpp_dir}}\include"
 
 # Build the C++ test app
 build: configure
-    cd /d "{{build_dir}}" && "{{cmake}}" --build . --config Release
+    cd /d "{{build_dir}}" && {{cmake}} --build . --config Release
 
 # Run
 run: build
