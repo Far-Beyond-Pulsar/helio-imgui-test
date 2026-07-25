@@ -7,7 +7,7 @@ use raw_window_handle::{
     WindowHandle, DisplayHandle,
     RawWindowHandle,
 };
-use helio::{required_wgpu_features, required_experimental_features};
+use helio::{required_wgpu_features, required_experimental_features, required_wgpu_limits};
 
 // ── Win32 window wrapper ───────────────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn bootstrap_init(
         &wgpu::DeviceDescriptor {
             label: Some("Helio Device"),
             required_features: required_wgpu_features(adapter.features()),
-            required_limits: wgpu::Limits::downlevel_defaults(),
+            required_limits: required_wgpu_limits(adapter.limits()),
             experimental_features: required_experimental_features(adapter.features()),
             ..Default::default()
         },
