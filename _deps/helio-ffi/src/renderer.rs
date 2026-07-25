@@ -4,6 +4,7 @@ use helio::{
     DebugDrawState, Renderer, RendererConfig, GiConfig, PerfOverlayMode,
 };
 use helio_core::RenderGraph;
+use helio_default_graphs;
 
 use crate::types::*;
 use crate::camera::camera_from_desc;
@@ -37,7 +38,6 @@ pub unsafe extern "C" fn helio_renderer_new(
 ) -> HelioRendererPtr {
     let device = Arc::from_raw(device as *const wgpu::Device);
     let queue = Arc::from_raw(queue as *const wgpu::Queue);
-    let scene = *Box::from_raw(scene as *mut helio::Scene);
     let fmt = wgpu_texture_format(surface_format);
 
     let gi = GiConfig {
@@ -69,25 +69,40 @@ pub unsafe extern "C" fn helio_renderer_new(
         },
         shadow_atlas_size: config.shadow_atlas_size,
         shadow_face_capacity: config.shadow_face_capacity.clamp(1, 256),
+        enable_ssr: true,
+        enable_planar_reflections: false,
     };
 
-    let mut render_graph = RenderGraph::new(&device, &queue);
-    render_graph.lock(config.width.max(1), config.height.max(1));
-
+    let scene_box = Box::from_raw(scene as *mut helio::Scene);
     let debug_state = Arc::new(Mutex::new(DebugDrawState::default()));
     let debug_cam_buf = Box::from_raw(debug_camera_buffer as *mut wgpu::Buffer);
     let cull_buf = Box::from_raw(cull_stats_buffer as *mut wgpu::Buffer);
+
+    let w = config.width.max(1);
+    let h = config.height.max(1);
+
+    let mut graph = helio_default_graphs::build_default_graph(
+        &device,
+        &queue,
+        &scene_box,
+        rcfg,
+        debug_state.clone(),
+        &debug_cam_buf,
+        &cull_buf,
+        None,
+    );
+    graph.lock(w, h);
 
     let renderer = Renderer::new(
         device,
         queue,
         fmt,
-        config.width.max(1),
-        config.height.max(1),
+        w,
+        h,
         config.render_scale.clamp(0.25, 1.0),
         rcfg,
-        scene,
-        render_graph,
+        *scene_box,
+        graph,
         debug_state,
         *debug_cam_buf,
         *cull_buf,
