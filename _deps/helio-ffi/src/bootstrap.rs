@@ -43,6 +43,8 @@ struct BootstrapState {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     adapter: wgpu::Adapter,
+    adapter_name: String,
+    adapter_type: wgpu::DeviceType,
     surface: Option<wgpu::Surface<'static>>,
     format: wgpu::TextureFormat,
     width: u32,
@@ -79,30 +81,41 @@ pub unsafe extern "C" fn bootstrap_init(
     });
 
     let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
-    let adapter = {
+    let (adapter, adapter_name, adapter_type) = {
         // Prefer discrete GPU, fall back to integrated, reject everything else
-        let mut best: Option<wgpu::Adapter> = None;
+        let mut best: Option<(wgpu::Adapter, wgpu::AdapterInfo)> = None;
         for adapter in adapters {
             let info = adapter.get_info();
             match info.device_type {
                 wgpu::DeviceType::DiscreteGpu => {
-                    best = Some(adapter);
-                    log::info!("bootstrap_init: using DiscreteGpu '{}'", info.name);
+                    best = Some((adapter, info));
                     break;
                 }
                 wgpu::DeviceType::IntegratedGpu => {
                     if best.is_none() {
-                        best = Some(adapter);
-                        log::info!("bootstrap_init: using IntegratedGpu '{}'", info.name);
+                        best = Some((adapter, info));
                     }
                 }
-                _ => {
-                    log::warn!("bootstrap_init: skipping '{}' ({:?})", info.name, info.device_type);
-                }
+                _ => {}
             }
         }
         match best {
-            Some(a) => a,
+            Some((a, info)) => {
+                let name = info.name.clone();
+                let dtype = info.device_type;
+                // Print adapter info - no logger needed
+                print!("[helio] Adapter: {} ", name);
+                match dtype {
+                    wgpu::DeviceType::DiscreteGpu => print!("(Discrete GPU)"),
+                    wgpu::DeviceType::IntegratedGpu => print!("(Integrated GPU)"),
+                    wgpu::DeviceType::VirtualGpu => print!("(Virtual GPU)"),
+                    wgpu::DeviceType::Cpu => print!("(CPU)"),
+                    wgpu::DeviceType::Other => print!("(Other)"),
+                    _ => print!("(Unknown)"),
+                }
+                println!(" [{:?}]", info.backend);
+                (a, name, dtype)
+            }
             None => {
                 log::error!("bootstrap_init: no suitable GPU adapter found");
                 return false;
@@ -150,6 +163,8 @@ pub unsafe extern "C" fn bootstrap_init(
         device,
         queue,
         adapter,
+        adapter_name,
+        adapter_type,
         surface: None,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         width,
@@ -249,4 +264,22 @@ pub unsafe extern "C" fn bootstrap_poll(wait: bool) {
 pub unsafe extern "C" fn bootstrap_shutdown() {
     CURRENT_FRAME = None;
     STATE = None;
+}
+
+/// Returns a human-readable description of the selected adapter.
+/// The caller must free the returned string with `helio_free_error_string`.
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_adapter_info() -> *mut std::ffi::c_char {
+    match STATE.as_ref() {
+        Some(s) => {
+            let dtype = match s.adapter_type {
+                wgpu::DeviceType::DiscreteGpu => "DiscreteGPU",
+                wgpu::DeviceType::IntegratedGpu => "IntegratedGPU",
+                _ => "Other",
+            };
+            let msg = format!("{} ({})", s.adapter_name, dtype);
+            std::ffi::CString::new(msg).unwrap_or_default().into_raw()
+        }
+        None => std::ffi::CString::new("No adapter selected").unwrap_or_default().into_raw(),
+    }
 }
