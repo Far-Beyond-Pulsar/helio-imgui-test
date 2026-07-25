@@ -207,10 +207,10 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
         format: fmt,
         width: state.width,
         height: state.height,
-        present_mode: wgpu::PresentMode::Immediate,
+        present_mode: wgpu::PresentMode::AutoNoVsync,
         alpha_mode: wgpu::CompositeAlphaMode::Auto,
         view_formats: vec![],
-        desired_maximum_frame_latency: 5,
+        desired_maximum_frame_latency: 2,
         color_space: wgpu::SurfaceColorSpace::Auto,
     });
 
@@ -232,24 +232,10 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
 
     // Retry loop: if acquire times out, poll the device to advance GPU
     // work and free swapchain images, then try again.
-    // Retry acquire on Timeout: sleep + poll to let the GPU catch up.
-    // Max ~100ms of retries before giving up.
-     let mut retries = 0u32;
-    let tex = loop {
-        match surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => break t,
-            wgpu::CurrentSurfaceTexture::Timeout => {
-                retries += 1;
-                if retries > 100 {
-                    return ptr::null_mut();
-                }
-                std::thread::sleep(std::time::Duration::from_millis(1));
-                state.device.poll(wgpu::PollType::Poll);
-                continue;
-            }
-            _ => return ptr::null_mut(), // Outdated, Lost, Occluded, Validation
-        }
+    let tex = match surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t)
+        | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+        _ => return ptr::null_mut(),
     };
 
     let view = Box::new(tex.texture.create_view(&wgpu::TextureViewDescriptor::default()));
@@ -263,6 +249,14 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_present() {
     CURRENT_FRAME = None;
+    // Wait for the GPU to finish so the swapchain image is returned
+    // before the next acquire. This prevents stalls entirely.
+    if let Some(ref state) = STATE {
+        state.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+    }
 }
 
 #[no_mangle]
