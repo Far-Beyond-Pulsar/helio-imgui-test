@@ -161,7 +161,8 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
 
     let caps = surface.get_capabilities(&state.adapter);
     let fmt = caps.formats.iter().copied()
-        .find(|f| f.is_srgb())
+        .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
+        .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
         .unwrap_or(caps.formats[0]);
 
     surface.configure(&state.device, &wgpu::SurfaceConfiguration {
