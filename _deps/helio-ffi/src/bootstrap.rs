@@ -210,7 +210,7 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
         present_mode: wgpu::PresentMode::AutoNoVsync,
         alpha_mode: wgpu::CompositeAlphaMode::Auto,
         view_formats: vec![],
-        desired_maximum_frame_latency: 2,
+        desired_maximum_frame_latency: 4,
         color_space: wgpu::SurfaceColorSpace::Auto,
     });
 
@@ -231,11 +231,38 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
     };
 
     // Retry loop: if acquire times out, poll the device to advance GPU
-    // work and free swapchain images, then try again.
-    let tex = match surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(t)
-        | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-        _ => return ptr::null_mut(),
+    // work and free swapchain images, then try again. On Outdated,
+    // reconfigure the surface and retry.
+    let tex = loop {
+        match surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => break t,
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                state.device.poll(wgpu::PollType::Poll);
+                continue;
+            }
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                let caps = surface.get_capabilities(&state.adapter);
+                let fmt = caps.formats.iter().copied()
+                    .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
+                    .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
+                    .unwrap_or(caps.formats[0]);
+                surface.configure(&state.device, &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: fmt,
+                    width: state.width,
+                    height: state.height,
+                    present_mode: wgpu::PresentMode::AutoNoVsync,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![],
+                    desired_maximum_frame_latency: 4,
+                    color_space: wgpu::SurfaceColorSpace::Auto,
+                });
+                state.format = fmt;
+                continue;
+            }
+            _ => return ptr::null_mut(),
+        }
     };
 
     let view = Box::new(tex.texture.create_view(&wgpu::TextureViewDescriptor::default()));
@@ -249,14 +276,6 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_present() {
     CURRENT_FRAME = None;
-    // Wait for the GPU to finish so the swapchain image is returned
-    // before the next acquire. This prevents stalls entirely.
-    if let Some(ref state) = STATE {
-        state.device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
-    }
 }
 
 #[no_mangle]
