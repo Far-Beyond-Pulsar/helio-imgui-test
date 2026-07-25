@@ -20,9 +20,10 @@ just run
 
 This will:
 
-1. Build `helio-ffi` with `cargo build --release` (fetches Helio crates from GitHub, produces `helio_ffi.dll` + `helio_ffi.lib`)
-2. Run CMake configure + build (fetches GLFW and Dear ImGui via FetchContent)
-3. Launch `helio_imgui_test.exe`
+1. Clone `Helio-cpp` C++ headers from GitHub into `_deps/`
+2. Build `helio-ffi` with `cargo build --release` (fetches Helio crates from the `feat/401-hlfs-phase1` branch)
+3. Run CMake configure + build (fetches GLFW and Dear ImGui via FetchContent)
+4. Launch `helio_imgui_test.exe`
 
 ## Manual build (without just)
 
@@ -33,7 +34,7 @@ cd ..\..
 
 mkdir build
 cd build
-cmake .. -DHELIO_FFI_LIB="..\_deps\helio-ffi\target\release\helio_ffi.lib"
+cmake .. -DHELIO_FFI_LIB="..\_deps\helio-ffi\target\release\helio_ffi.lib" -DHELIO_CPP_INCLUDE="..\_deps\Helio-cpp\include"
 cmake --build . --config Release
 .\Release\helio_imgui_test.exe
 ```
@@ -43,7 +44,8 @@ cmake --build . --config Release
 ```
 helio-imgui-test/
 ├── _deps/
-│   └── helio-ffi/        # Vendored Rust crate with C FFI (bootstrap + scene + renderer)
+│   ├── helio-ffi/        # Vendored Rust crate with C FFI (bootstrap + scene + renderer)
+│   └── Helio-cpp/        # Vendored C++ headers for the helio_ffi C API
 ├── include/
 │   └── bootstrap.h       # C header for wgpu bootstrapping functions
 ├── src/
@@ -60,3 +62,7 @@ helio-imgui-test/
 - Renderer creation and rendering
 - Swapchain presentation
 - Editor and picker smoke tests
+
+## Notes
+
+- helio-ffi depends on the `feat/401-hlfs-phase1` branch of Helio (visibility fixes for FFI). This will be merged to `main` once stable.
