@@ -230,10 +230,21 @@ pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_vo
         None => return ptr::null_mut(),
     };
 
-    let tex = match surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(t)
-        | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-        _ => return ptr::null_mut(),
+    // Retry loop: if acquire times out, poll the device to advance GPU
+    // work and free swapchain images, then try again.
+    let tex = loop {
+        match surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => break t,
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                state.device.poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(std::time::Duration::from_millis(10)),
+                });
+                continue;
+            }
+            _ => return ptr::null_mut(), // Outdated, Lost, Occluded, Validation
+        }
     };
 
     let view = Box::new(tex.texture.create_view(&wgpu::TextureViewDescriptor::default()));
