@@ -84,8 +84,37 @@ pub unsafe extern "C" fn bootstrap_init(
         force_fallback_adapter: false,
         ..Default::default()
     })) {
-        Ok(a) => a,
-        Err(_) => return false,
+        Ok(a) => {
+            let info = a.get_info();
+            if info.device_type == wgpu::DeviceType::Cpu {
+                log::warn!("bootstrap_init: got CPU adapter '{}', looking for a GPU", info.name);
+                drop(a);
+                let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
+                let mut best = None;
+                for adapter in adapters {
+                    let info = adapter.get_info();
+                    if info.device_type != wgpu::DeviceType::Cpu {
+                        best = Some(adapter);
+                        log::info!("bootstrap_init: using adapter '{}' ({:?})", info.name, info.device_type);
+                        break;
+                    }
+                }
+                match best {
+                    Some(a) => a,
+                    None => {
+                        log::error!("bootstrap_init: no non-CPU adapter found");
+                        return false;
+                    }
+                }
+            } else {
+                log::info!("bootstrap_init: using adapter '{}' ({:?})", info.name, info.device_type);
+                a
+            }
+        }
+        Err(e) => {
+            log::error!("bootstrap_init: request_adapter failed: {:?}", e);
+            return false;
+        }
     };
 
     let (device, queue) = match pollster::block_on(adapter.request_device(
