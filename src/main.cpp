@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <chrono>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -241,6 +242,7 @@ int main() {
         }
 
         // Animate camera
+        auto t0 = std::chrono::high_resolution_clock::now();
         float angle = (float)glfwGetTime() * 0.3f;
         float cx = 5.0f * sinf(angle);
         float cz = 5.0f * cosf(angle);
@@ -253,19 +255,32 @@ int main() {
         helio_scene_update_camera(rs, &cam);
 
         // Render
+        auto t1 = std::chrono::high_resolution_clock::now();
         void* target_view = bootstrap_current_texture_view();
+        auto t2 = std::chrono::high_resolution_clock::now();
         if (target_view) {
             HelioResult r = helio_renderer_render(renderer, &cam, target_view);
+            auto t3 = std::chrono::high_resolution_clock::now();
             if (!r.success && r.error_message) {
                 fprintf(stderr, "Render error: %s\n", r.error_message);
                 helio_free_error_string(r.error_message);
             }
             bootstrap_present();
+            auto t4 = std::chrono::high_resolution_clock::now();
+            auto us_cam = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+            auto us_acq = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+            auto us_render = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+            auto us_present = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3).count();
+            frame_count++;
+            if (us_render > 10000) { // Only print if render takes > 10ms
+                printf("[timing] cam=%ldus acq=%ldus render=%ldus present=%ldus\n",
+                    us_cam, us_acq, us_render, us_present);
+            }
         }
 
         // FPS
-        frame_count++;
         double now = glfwGetTime();
+        if (now - last_time >= 1.0) {
         if (now - last_time >= 1.0) {
             printf("[helio] FPS: %d\n", frame_count);
             frame_count = 0;
