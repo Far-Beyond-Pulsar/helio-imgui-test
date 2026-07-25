@@ -1,0 +1,21 @@
+[package]
+name = "helio-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "C FFI bindings for Helio renderer"
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+name = "helio_ffi"
+
+[dependencies]
+helio = { path = "../Helio/crates/helio" }
+helio-core = { path = "../Helio/crates/helio-core" }
+libhelio = { path = "../Helio/crates/libhelio" }
+glam = { version = "0.33", features = ["bytemuck"] }
+bytemuck = { version = "1", features = ["derive"] }
+wgpu = { version = "30.0", default-features = true, features = ["vulkan", "metal", "dx12", "gles", "webgpu", "wgsl"] }
+pollster = "0.4"
+raw-window-handle = "0.6.2"
+log = "0.4"

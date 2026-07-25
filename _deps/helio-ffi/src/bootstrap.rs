@@ -1,0 +1,231 @@
+use std::num::NonZeroIsize;
+use std::ptr;
+use std::sync::Arc;
+use raw_window_handle::{
+    HasWindowHandle, HasDisplayHandle,
+    Win32WindowHandle,
+    WindowHandle, DisplayHandle,
+    RawWindowHandle,
+};
+
+// ── Win32 window wrapper ───────────────────────────────────────────────────────
+
+struct Win32Window {
+    hwnd: isize,
+    hinstance: isize,
+}
+
+impl HasWindowHandle for Win32Window {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, raw_window_handle::HandleError> {
+        let hwnd = NonZeroIsize::new(self.hwnd).expect("HWND must be non-null");
+        let mut handle = Win32WindowHandle::new(hwnd);
+        if let Some(hi) = NonZeroIsize::new(self.hinstance) {
+            handle.hinstance = Some(hi);
+        }
+        Ok(unsafe { WindowHandle::borrow_raw(RawWindowHandle::Win32(handle)) })
+    }
+}
+
+impl HasDisplayHandle for Win32Window {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, raw_window_handle::HandleError> {
+        Ok(DisplayHandle::windows())
+    }
+}
+
+unsafe impl Send for Win32Window {}
+unsafe impl Sync for Win32Window {}
+
+// ── Internal state ─────────────────────────────────────────────────────────────
+
+struct BootstrapState {
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+    adapter: wgpu::Adapter,
+    surface: Option<wgpu::Surface<'static>>,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+}
+
+struct CurrentFrame {
+    surface_tex: wgpu::SurfaceTexture,
+    view: Box<wgpu::TextureView>,
+}
+
+static mut STATE: Option<BootstrapState> = None;
+static mut CURRENT_FRAME: Option<CurrentFrame> = None;
+
+// ── Exported C functions ───────────────────────────────────────────────────────
+
+/// Initialise wgpu and return pointers to device, queue, and auxiliary buffers.
+///
+/// `out_debug_cam` and `out_cull_stats` are boxed buffers whose ownership
+/// transfers to the caller (and eventually to helio_renderer_new).
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_init(
+    width: u32,
+    height: u32,
+    out_device: *mut *mut std::ffi::c_void,
+    out_queue: *mut *mut std::ffi::c_void,
+    out_debug_cam: *mut *mut std::ffi::c_void,
+    out_cull_stats: *mut *mut std::ffi::c_void,
+) -> bool {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        flags: wgpu::InstanceFlags::empty(),
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+
+    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+
+    let (device, queue) = match pollster::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: Some("Helio Device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            ..Default::default()
+        },
+    )) {
+        Ok(dq) => dq,
+        Err(_) => return false,
+    };
+
+    let device = Arc::new(device);
+    let queue = Arc::new(queue);
+
+    let debug_cam_buf = Box::new(device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("debug_camera"),
+        size: 256,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    }));
+
+    let cull_stats_buf = Box::new(device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("cull_stats"),
+        size: 64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    }));
+
+    ptr::write(out_device, Arc::into_raw(device.clone()) as *mut _);
+    ptr::write(out_queue, Arc::into_raw(queue.clone()) as *mut _);
+    ptr::write(out_debug_cam, Box::into_raw(debug_cam_buf) as *mut _);
+    ptr::write(out_cull_stats, Box::into_raw(cull_stats_buf) as *mut _);
+
+    STATE = Some(BootstrapState {
+        device,
+        queue,
+        adapter,
+        surface: None,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        width,
+        height,
+    });
+
+    true
+}
+
+/// Create a wgpu surface from Win32 HWND/HINSTANCE.
+/// Must be called after `bootstrap_init`.
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_void, hwnd: *mut std::ffi::c_void) -> bool {
+    let state = match STATE.as_mut() {
+        Some(s) => s,
+        None => return false,
+    };
+
+    let raw_win = Win32Window {
+        hwnd: hwnd as isize,
+        hinstance: hinstance as isize,
+    };
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        flags: wgpu::InstanceFlags::empty(),
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+
+    let surface = match instance.create_surface(raw_win) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("bootstrap_create_surface: {:?}", e);
+            return false;
+        }
+    };
+
+    let caps = surface.get_capabilities(&state.adapter);
+    let fmt = caps.formats.iter().copied()
+        .find(|f| f.is_srgb())
+        .unwrap_or(caps.formats[0]);
+
+    surface.configure(&state.device, &wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: fmt,
+        width: state.width,
+        height: state.height,
+        present_mode: wgpu::PresentMode::AutoVsync,
+        alpha_mode: wgpu::CompositeAlphaMode::Auto,
+        view_formats: vec![],
+        desired_maximum_frame_latency: 2,
+        color_space: wgpu::SurfaceColorSpace::Auto,
+    });
+
+    state.format = fmt;
+    state.surface = Some(surface);
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_void {
+    let state = match STATE.as_mut() {
+        Some(s) => s,
+        None => return ptr::null_mut(),
+    };
+    let surface = match state.surface.as_ref() {
+        Some(s) => s,
+        None => return ptr::null_mut(),
+    };
+
+    let tex = match surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t)
+        | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+        _ => return ptr::null_mut(),
+    };
+
+    let view = Box::new(tex.texture.create_view(&wgpu::TextureViewDescriptor::default()));
+    let view_ptr = &*view as *const wgpu::TextureView as *mut std::ffi::c_void;
+
+    CURRENT_FRAME = Some(CurrentFrame { surface_tex: tex, view });
+
+    view_ptr
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_present() {
+    CURRENT_FRAME = None;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_poll(wait: bool) {
+    if let Some(ref state) = STATE {
+        if wait {
+            let _ = state.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        } else {
+            let _ = state.device.poll(wgpu::PollType::Poll);
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bootstrap_shutdown() {
+    CURRENT_FRAME = None;
+    STATE = None;
+}
