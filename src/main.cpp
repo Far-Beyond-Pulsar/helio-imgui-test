@@ -271,8 +271,10 @@ int main() {
             printf("[perf] acq=%.1fms render=%.1fms present=%.1fms\n",
                 ms_acq, ms_render, ms_present);
         } else {
+            // Acquire failed — poll device to advance GPU and free swapchain images
+            bootstrap_poll(true);
             if (ms_acq > 1.0) {
-                printf("[perf] ACQUIRE FAILED after %.0fms\n", ms_acq);
+                printf("[perf] ACQUIRE waited %.0fms, then drained GPU\n", ms_acq);
             }
         }
 
