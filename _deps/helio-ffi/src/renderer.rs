@@ -78,9 +78,6 @@ pub unsafe extern "C" fn helio_renderer_new(
     let debug_cam_buf = Box::from_raw(debug_camera_buffer as *mut wgpu::Buffer);
     let cull_buf = Box::from_raw(cull_stats_buffer as *mut wgpu::Buffer);
 
-    let w = config.width.max(1);
-    let h = config.height.max(1);
-
     let mut graph = helio_default_graphs::build_default_graph(
         &device,
         &queue,
@@ -91,7 +88,6 @@ pub unsafe extern "C" fn helio_renderer_new(
         &cull_buf,
         None,
     );
-    graph.lock(w, h);
 
     let renderer = Renderer::new(
         device,
