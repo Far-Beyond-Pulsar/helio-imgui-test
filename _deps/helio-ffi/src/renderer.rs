@@ -71,7 +71,8 @@ pub unsafe extern "C" fn helio_renderer_new(
         shadow_face_capacity: config.shadow_face_capacity.clamp(1, 256),
     };
 
-    let render_graph = RenderGraph::new(&device, &queue);
+    let mut render_graph = RenderGraph::new(&device, &queue);
+    render_graph.lock(config.width.max(1), config.height.max(1));
 
     let debug_state = Arc::new(Mutex::new(DebugDrawState::default()));
     let debug_cam_buf = Box::from_raw(debug_camera_buffer as *mut wgpu::Buffer);
