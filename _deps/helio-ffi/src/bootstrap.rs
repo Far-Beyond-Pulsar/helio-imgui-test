@@ -75,12 +75,12 @@ pub unsafe extern "C" fn bootstrap_init(
     out_cull_stats: *mut *mut std::ffi::c_void,
 ) -> bool {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::all(),
+        backends: wgpu::Backends::DX12,
         flags: wgpu::InstanceFlags::empty(),
         ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
-    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
+    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12));
     let (adapter, adapter_name, adapter_type) = {
         // Prefer discrete GPU, fall back to integrated, reject everything else
         let mut best: Option<(wgpu::Adapter, wgpu::AdapterInfo)> = None;
