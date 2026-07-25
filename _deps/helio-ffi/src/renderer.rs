@@ -81,7 +81,7 @@ pub unsafe extern "C" fn helio_renderer_new(
     let w = config.width.max(1);
     let h = config.height.max(1);
 
-    let mut graph = helio_default_graphs::build_default_graph(
+    let mut graph = helio_default_graphs::build_fxaa_graph(
         &device,
         &queue,
         &scene_box,
