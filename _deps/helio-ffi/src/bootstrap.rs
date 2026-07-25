@@ -9,8 +9,6 @@ use raw_window_handle::{
 };
 use helio::{required_wgpu_features, required_experimental_features, required_wgpu_limits};
 
-// ── Win32 window wrapper ───────────────────────────────────────────────────────
-
 struct Win32Window {
     hwnd: isize,
     hinstance: isize,
@@ -36,35 +34,19 @@ impl HasDisplayHandle for Win32Window {
 unsafe impl Send for Win32Window {}
 unsafe impl Sync for Win32Window {}
 
-// ── Internal state ─────────────────────────────────────────────────────────────
-
 struct BootstrapState {
     instance: wgpu::Instance,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     adapter: wgpu::Adapter,
-    adapter_name: String,
-    adapter_type: wgpu::DeviceType,
     surface: Option<wgpu::Surface<'static>>,
     format: wgpu::TextureFormat,
     width: u32,
     height: u32,
 }
 
-struct CurrentFrame {
-    surface_tex: wgpu::SurfaceTexture,
-    view: Box<wgpu::TextureView>,
-}
-
 static mut STATE: Option<BootstrapState> = None;
-static mut CURRENT_FRAME: Option<CurrentFrame> = None;
 
-// ── Exported C functions ───────────────────────────────────────────────────────
-
-/// Initialise wgpu and return pointers to device, queue, and auxiliary buffers.
-///
-/// `out_debug_cam` and `out_cull_stats` are boxed buffers whose ownership
-/// transfers to the caller (and eventually to helio_renderer_new).
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_init(
     width: u32,
@@ -82,20 +64,12 @@ pub unsafe extern "C" fn bootstrap_init(
 
     let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12));
     let (adapter, adapter_name, adapter_type) = {
-        // Prefer discrete GPU, fall back to integrated, reject everything else
-        let mut best: Option<(wgpu::Adapter, wgpu::AdapterInfo)> = None;
+        let mut best = None;
         for adapter in adapters {
             let info = adapter.get_info();
             match info.device_type {
-                wgpu::DeviceType::DiscreteGpu => {
-                    best = Some((adapter, info));
-                    break;
-                }
-                wgpu::DeviceType::IntegratedGpu => {
-                    if best.is_none() {
-                        best = Some((adapter, info));
-                    }
-                }
+                wgpu::DeviceType::DiscreteGpu => { best = Some((adapter, info)); break; }
+                wgpu::DeviceType::IntegratedGpu => { if best.is_none() { best = Some((adapter, info)); } }
                 _ => {}
             }
         }
@@ -103,23 +77,16 @@ pub unsafe extern "C" fn bootstrap_init(
             Some((a, info)) => {
                 let name = info.name.clone();
                 let dtype = info.device_type;
-                // Print adapter info - no logger needed
                 print!("[helio] Adapter: {} ", name);
                 match dtype {
                     wgpu::DeviceType::DiscreteGpu => print!("(Discrete GPU)"),
                     wgpu::DeviceType::IntegratedGpu => print!("(Integrated GPU)"),
-                    wgpu::DeviceType::VirtualGpu => print!("(Virtual GPU)"),
-                    wgpu::DeviceType::Cpu => print!("(CPU)"),
-                    wgpu::DeviceType::Other => print!("(Other)"),
-                    _ => print!("(Unknown)"),
+                    _ => print!("(Other)"),
                 }
                 println!(" [{:?}]", info.backend);
                 (a, name, dtype)
             }
-            None => {
-                log::error!("bootstrap_init: no suitable GPU adapter found");
-                return false;
-            }
+            None => { return false; }
         }
     };
 
@@ -145,7 +112,6 @@ pub unsafe extern "C" fn bootstrap_init(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     }));
-
     let cull_stats_buf = Box::new(device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("cull_stats"),
         size: 64,
@@ -163,8 +129,6 @@ pub unsafe extern "C" fn bootstrap_init(
         device,
         queue,
         adapter,
-        adapter_name,
-        adapter_type,
         surface: None,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         width,
@@ -174,34 +138,25 @@ pub unsafe extern "C" fn bootstrap_init(
     true
 }
 
-/// Create a wgpu surface from Win32 HWND/HINSTANCE.
-/// Must be called after `bootstrap_init`.
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_void, hwnd: *mut std::ffi::c_void) -> bool {
     let state = match STATE.as_mut() {
         Some(s) => s,
         None => return false,
     };
-
     let raw_win = Win32Window {
         hwnd: hwnd as isize,
         hinstance: hinstance as isize,
     };
-
     let surface = match state.instance.create_surface(raw_win) {
         Ok(s) => s,
-        Err(e) => {
-            log::error!("bootstrap_create_surface: {:?}", e);
-            return false;
-        }
+        Err(_) => return false,
     };
-
     let caps = surface.get_capabilities(&state.adapter);
     let fmt = caps.formats.iter().copied()
         .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
         .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
         .unwrap_or(caps.formats[0]);
-
     surface.configure(&state.device, &wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: fmt,
@@ -213,109 +168,51 @@ pub unsafe extern "C" fn bootstrap_create_surface(hinstance: *mut std::ffi::c_vo
         desired_maximum_frame_latency: 2,
         color_space: wgpu::SurfaceColorSpace::Auto,
     });
-
     state.format = fmt;
     state.surface = Some(surface);
     true
 }
 
+/// Acquire the next swapchain texture, render to it, and present.
+/// Returns false if the surface was lost.
 #[no_mangle]
-pub unsafe extern "C" fn bootstrap_current_texture_view() -> *mut std::ffi::c_void {
+pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void, camera: *const std::ffi::c_void) -> bool {
     let state = match STATE.as_mut() {
         Some(s) => s,
-        None => return ptr::null_mut(),
+        None => return false,
     };
     let surface = match state.surface.as_ref() {
         Some(s) => s,
-        None => return ptr::null_mut(),
+        None => return false,
     };
 
-    // Retry loop: if acquire times out, poll the device to advance GPU
-    // work and free swapchain images, then try again. On Outdated,
-    // reconfigure the surface and retry.
-    // Retry once on Timeout in case the poll in present() didn't complete
-    for _ in 0..2 {
+    // Acquire with retry
+    let surface_tex = loop {
         match surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => return {
-                let view = Box::new(t.texture.create_view(&wgpu::TextureViewDescriptor::default()));
-                let ptr = &*view as *const wgpu::TextureView as *mut std::ffi::c_void;
-                CURRENT_FRAME = Some(CurrentFrame { surface_tex: t, view });
-                ptr
-            },
+            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => break t,
             wgpu::CurrentSurfaceTexture::Timeout => {
                 state.device.poll(wgpu::PollType::Poll);
                 continue;
             }
-            wgpu::CurrentSurfaceTexture::Outdated => {
-                let caps = surface.get_capabilities(&state.adapter);
-                let fmt = caps.formats.iter().copied()
-                    .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
-                    .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
-                    .unwrap_or(caps.formats[0]);
-                surface.configure(&state.device, &wgpu::SurfaceConfiguration {
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    format: fmt,
-                    width: state.width,
-                    height: state.height,
-                    present_mode: wgpu::PresentMode::Fifo,
-                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                    view_formats: vec![],
-                    desired_maximum_frame_latency: 2,
-                    color_space: wgpu::SurfaceColorSpace::Auto,
-                });
-                state.format = fmt;
-                continue;
-            }
-            _ => break,
+            _ => return false,
         }
-    }
-    ptr::null_mut()
-}
+    };
+    let view = surface_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-#[no_mangle]
-pub unsafe extern "C" fn bootstrap_present() {
-    CURRENT_FRAME = None;
-    // Drain GPU so swapchain images are returned before next acquire
-    if let Some(ref state) = STATE {
-        let _ = state.device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some(std::time::Duration::from_millis(16)),
-        });
+    // Render
+    let renderer = &mut *(renderer as *mut helio::Renderer);
+    let camera = &*(camera as *const crate::types::HelioCameraDesc);
+    if let Err(e) = renderer.render(&crate::camera::camera_from_desc(camera), &view) {
+        let _ = e;
+        return false;
     }
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn bootstrap_poll(wait: bool) {
-    if let Some(ref state) = STATE {
-        if wait {
-            let _ = state.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
-        } else {
-            let _ = state.device.poll(wgpu::PollType::Poll);
-        }
-    }
+    // Present (drop SurfaceTexture)
+    drop(surface_tex);
+    true
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn bootstrap_shutdown() {
-    CURRENT_FRAME = None;
     STATE = None;
-}
-
-/// Returns a human-readable description of the selected adapter.
-/// The caller must free the returned string with `helio_free_error_string`.
-#[no_mangle]
-pub unsafe extern "C" fn bootstrap_adapter_info() -> *mut std::ffi::c_char {
-    match STATE.as_ref() {
-        Some(s) => {
-            let dtype = match s.adapter_type {
-                wgpu::DeviceType::DiscreteGpu => "DiscreteGPU",
-                wgpu::DeviceType::IntegratedGpu => "IntegratedGPU",
-                _ => "Other",
-            };
-            let msg = format!("{} ({})", s.adapter_name, dtype);
-            std::ffi::CString::new(msg).unwrap_or_default().into_raw()
-        }
-        None => std::ffi::CString::new("No adapter selected").unwrap_or_default().into_raw(),
-    }
 }

@@ -231,16 +231,6 @@ int main() {
     while (running && !glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-        // Resize
-        int fb_w, fb_h;
-        glfwGetFramebufferSize(window, &fb_w, &fb_h);
-        if (fb_w != w || fb_h != h) {
-            w = fb_w;
-            h = fb_h;
-            helio_renderer_output_size(renderer, (uint32_t*)&fb_w, (uint32_t*)&fb_h);
-        }
-
-        // Animate camera
         float angle = (float)glfwGetTime() * 0.3f;
         float cx = 5.0f * sinf(angle);
         float cz = 5.0f * cosf(angle);
@@ -252,29 +242,9 @@ int main() {
         );
         helio_scene_update_camera(rs, &cam);
 
-        // Render
-        double t0 = glfwGetTime();
-        void* target_view = bootstrap_current_texture_view();
-        double t1 = glfwGetTime();
-        double ms_acq = (t1 - t0) * 1000.0;
-        if (target_view) {
-            HelioResult r = helio_renderer_render(renderer, &cam, target_view);
-            double t2 = glfwGetTime();
-            if (!r.success && r.error_message) {
-                fprintf(stderr, "Render error: %s\n", r.error_message);
-                helio_free_error_string(r.error_message);
-            }
-            bootstrap_present();
-            double t3 = glfwGetTime();
-            double ms_render = (t2 - t1) * 1000.0;
-            double ms_present = (t3 - t2) * 1000.0;
-            printf("[perf] acq=%.1fms render=%.1fms present=%.1fms total=%.1fms\n",
-                ms_acq, ms_render, ms_present, (t3 - t0) * 1000.0);
-        } else {
-            printf("[perf] ACQUIRE FAILED (outdated/lost) after %.0fms\n", ms_acq);
-        }
+        if (!bootstrap_render_frame(renderer, &cam))
+            break;
 
-        // FPS
         frame_count++;
         double now = glfwGetTime();
         if (now - last_time >= 1.0) {

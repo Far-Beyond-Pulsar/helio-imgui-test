@@ -30,6 +30,10 @@ void bootstrap_present(void);
 /// Poll wgpu device (process async callbacks).
 void bootstrap_poll(bool wait);
 
+/// Acquire swapchain image, render scene to it, and present.
+/// Returns false if the surface was lost and the app should stop.
+bool bootstrap_render_frame(void* renderer, const void* camera);
+
 /// Destroy all resources.  Call at exit.
 void bootstrap_shutdown(void);
 

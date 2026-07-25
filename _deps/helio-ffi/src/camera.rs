@@ -46,7 +46,7 @@ pub unsafe extern "C" fn helio_camera_perspective_look_at(
 }
 
 /// Convert a HelioCameraDesc to a Rust Camera.
-pub(crate) fn camera_from_desc(desc: &HelioCameraDesc) -> Camera {
+pub fn camera_from_desc(desc: &HelioCameraDesc) -> Camera {
     Camera::from_matrices(
         desc.view.into(),
         desc.proj.into(),
