@@ -252,7 +252,8 @@ int main() {
         );
         helio_scene_update_camera(rs, &cam);
 
-        // Render
+        // Render — drain GPU first so swapchain images are available
+        bootstrap_poll(true);
         double t0 = glfwGetTime();
         void* target_view = bootstrap_current_texture_view();
         double t1 = glfwGetTime();
@@ -268,14 +269,8 @@ int main() {
             double t3 = glfwGetTime();
             double ms_render = (t2 - t1) * 1000.0;
             double ms_present = (t3 - t2) * 1000.0;
-            printf("[perf] acq=%.1fms render=%.1fms present=%.1fms\n",
-                ms_acq, ms_render, ms_present);
-        } else {
-            // Acquire failed — poll device to advance GPU and free swapchain images
-            bootstrap_poll(true);
-            if (ms_acq > 1.0) {
-                printf("[perf] ACQUIRE waited %.0fms, then drained GPU\n", ms_acq);
-            }
+            printf("[perf] acq=%.1fms render=%.1fms present=%.1fms total=%.1fms\n",
+                ms_acq, ms_render, ms_present, (t3 - t0) * 1000.0);
         }
 
         // FPS
