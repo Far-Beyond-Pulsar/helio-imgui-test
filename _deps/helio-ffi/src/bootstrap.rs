@@ -186,6 +186,8 @@ pub unsafe extern "C" fn bootstrap_render_frame(renderer: *mut std::ffi::c_void,
         None => return false,
     };
 
+    // Poll device before acquire to flush pending presentation work
+    state.device.poll(wgpu::PollType::Poll);
     let surface_tex = match surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
         _ => return false,
